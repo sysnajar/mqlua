@@ -146,7 +146,8 @@ node_create(lua_State *L)
 	lua_State *R;
 	pthread_t t;
 	const char *path;
-	int n, top, pop = 0;
+	void *housekeeping;
+	int n, top, msg, pop = 0;
 	struct node_state *s;
 
 	R = luaL_newstate();
@@ -207,7 +208,16 @@ node_create(lua_State *L)
 		free(s);
 		return luaL_error(L, "can not create a new node");
 	}
-	lua_pushnumber(L, t);
+#ifdef HOUSEKEEPING
+	housekeeping = zmq_socket(zmq_housekeeping, ZMQ_PUSH);
+
+	/* Tell the housekeeper that we are starting */
+	zmq_connect(housekeeping, "inproc://housekeeping");
+	msg = NODE_STARTING;
+	zmq_send(housekeeping, &msg, sizeof(msg), 0);
+	zmq_close(housekeeping);
+#endif
+	lua_pushinteger(L, (lua_Integer)t);
 	return 1;
 }
 
@@ -272,14 +282,6 @@ node(void *state)
 #endif
 
 	pthread_detach(pthread_self());
-#ifdef HOUSEKEEPING
-	housekeeping = zmq_socket(zmq_housekeeping, ZMQ_PUSH);
-
-	/* Tell the housekeeper that we are starting */
-	zmq_connect(housekeeping, "inproc://housekeeping");
-	msg = NODE_STARTING;
-	zmq_send(housekeeping, &msg, sizeof(msg), 0);
-#endif
 
 	if (lua_pcall(s->L, s->nargs, 0, 0))
 		printf("pcall failed: %s\n", lua_tostring(s->L, -1));
@@ -287,7 +289,10 @@ node(void *state)
 	free(s);
 
 #ifdef HOUSEKEEPING
+	housekeeping = zmq_socket(zmq_housekeeping, ZMQ_PUSH);
+
 	/* Tell the housekeeper that we terminated */
+	zmq_connect(housekeeping, "inproc://housekeeping");
 	msg = NODE_TERMINATED;
 	zmq_send(housekeeping, &msg, sizeof(msg), 0);
 	zmq_close(housekeeping);

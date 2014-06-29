@@ -72,8 +72,9 @@ main(int argc, char *argv[])
 #endif
 #ifdef HOUSEKEEPING
 	void *housekeeping;
-	int msg;
+	int events, msg;
 	int nodes = 0;
+	size_t len;
 #endif
 	int n;
 
@@ -125,17 +126,20 @@ main(int argc, char *argv[])
 	}
 #endif
 #ifdef HOUSEKEEPING
-	do {
-		n = zmq_recv(housekeeping, &msg, sizeof(msg), 0);
-		switch (msg) {
-		case NODE_STARTING:
-			++nodes;
-			break;
-		case NODE_TERMINATED:
-			--nodes;
-			break;
-		}
-	} while (nodes > 0);
+	len = sizeof events;
+	zmq_getsockopt(housekeeping, ZMQ_EVENTS, &events, &len);
+	if (events & ZMQ_POLLIN)
+		do {
+			n = zmq_recv(housekeeping, &msg, sizeof(msg), 0);
+			switch (msg) {
+			case NODE_STARTING:
+				++nodes;
+				break;
+			case NODE_TERMINATED:
+				--nodes;
+				break;
+			}
+		} while (nodes > 0);
 
 	zmq_close(housekeeping);
 	zmq_ctx_destroy(zmq_housekeeping);
