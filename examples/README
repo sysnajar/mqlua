@@ -1,0 +1,8 @@
+mqLua examples
+
+x11_event_loop	Show how to integration mqLua and zmq with the X11 event
+		loop, one node runs the GUI and the X11 event loop, a
+		second node reads input from the console and sends that
+		text to the GUI node for display.
+
+		Enter 'mqlua main.lua' to run.
