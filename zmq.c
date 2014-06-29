@@ -33,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <zmq.h>
+#include <zmq_utils.h>
 
 #include "zmq.h"
 
@@ -52,6 +53,49 @@ luazmq_ctx_new(lua_State *L)
 	return 1;
 }
 
+/* XXX handles only integers atm */
+static int
+luazmq_ctx_get(lua_State *L)
+{
+	void **ctx;
+	int option_name;
+	int option_value;
+
+	ctx = luaL_checkudata(L, 1, ZMQ_CTX_METATABLE);
+	option_name = luaL_checkinteger(L, 2);
+	if ((option_value = zmq_ctx_get(*ctx, option_name)) == -1)
+		return luaL_error(L, "zmq_ctx_get failed");
+	lua_pushinteger(L, option_value);
+	return 1;
+}
+
+static int
+luazmq_ctx_set(lua_State *L)
+{
+	void **ctx;
+	int option_name, option_value;
+
+	ctx = luaL_checkudata(L, 1, ZMQ_CTX_METATABLE);
+	option_name = luaL_checkinteger(L, 2);
+	option_value = luaL_checkinteger(L, 3);
+	if (zmq_ctx_set(*ctx, option_name, option_value))
+		lua_pushnil(L);
+	else
+		lua_pushboolean(L, 1);
+	return 1;
+}
+
+static int
+luazmq_ctx_shutdown(lua_State *L)
+{
+	void **ctx;
+
+	ctx = luaL_checkudata(L, -1, ZMQ_CTX_METATABLE);
+	if (*ctx)
+		zmq_ctx_shutdown(*ctx);
+	return 0;
+}
+
 static int
 luazmq_ctx_socket(lua_State *L)
 {
@@ -68,13 +112,13 @@ luazmq_ctx_socket(lua_State *L)
 }
 
 static int
-luazmq_ctx_destroy(lua_State *L)
+luazmq_ctx_term(lua_State *L)
 {
 	void **ctx;
 
 	ctx = luaL_checkudata(L, -1, ZMQ_CTX_METATABLE);
 	if (*ctx) {
-		zmq_ctx_destroy(*ctx);
+		zmq_ctx_term(*ctx);
 		*ctx = NULL;
 	}
 	return 0;
@@ -93,6 +137,27 @@ luazmq_socket(lua_State *L)
 }
 
 static int
+luazmq_strerror(lua_State *L)
+{
+	lua_pushstring(L, zmq_strerror(errno));
+	return 1;
+}
+
+static int
+luazmq_curve_keypair(lua_State *L)
+{
+	char z85_public_key[41], z85_secret_key[41];
+
+	if (zmq_curve_keypair(z85_public_key, z85_secret_key))
+		return luaL_error(L, "libzmq was not built with cryptopgraphic "
+		    "support");
+
+	lua_pushstring(L, z85_public_key);
+	lua_pushstring(L, z85_secret_key);
+	return 2;
+}
+
+static int
 luazmq_version(lua_State *L)
 {
 	int major, minor, patch;
@@ -101,6 +166,46 @@ luazmq_version(lua_State *L)
 	lua_pushinteger(L, minor);
 	lua_pushinteger(L, patch);
 	return 3;
+}
+
+static int
+luazmq_z85_decode(lua_State *L)
+{
+	char *string;
+	uint8_t *dest;
+
+	string = (char *)luaL_checkstring(L, 1);
+
+	dest = malloc(0.8 * strlen(string));
+	if (dest == NULL)
+		return luaL_error(L, "memory error");
+	if (zmq_z85_decode(dest, string) == NULL)
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, (const char *)dest);
+	free(dest);
+	return 1;
+}
+
+static int
+luazmq_z85_encode(lua_State *L)
+{
+	char *dest;
+	uint8_t *data;
+	size_t size;
+
+	data = (uint8_t *)luaL_checkstring(L, 1);
+	size = luaL_checkinteger(L, 2);
+
+	dest = malloc(size * 1.25 + 1);
+	if (dest == NULL)
+		return luaL_error(L, "memory error");
+	if (zmq_z85_encode(dest, data, size) == NULL)
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, dest);
+	free(dest);
+	return 1;
 }
 
 static int
@@ -273,6 +378,20 @@ luazmq_setsockopt(lua_State *L)
 	return 1;
 }
 
+static int
+luazmq_unbind(lua_State *L)
+{
+	void **sock;
+
+	sock = luaL_checkudata(L, 1, ZMQ_SOCKET_METATABLE);
+
+	if (zmq_unbind(*sock, luaL_checkstring(L, 2)))
+		lua_pushnil(L);
+	else
+		lua_pushboolean(L, 1);
+	return 1;
+}
+
 static void
 luazmq_set_info(lua_State *L)
 {
@@ -284,34 +403,42 @@ luazmq_set_info(lua_State *L)
 	lua_pushliteral(L, "0MQ for Lua");
 	lua_settable(L, -3);
 	lua_pushliteral(L, "_VERSION");
-	lua_pushliteral(L, "zmq 1.0.1");
+	lua_pushliteral(L, "zmq 1.0.3");
 	lua_settable(L, -3);
 }
 int
 luaopen_zmq(lua_State *L)
 {
 	struct luaL_Reg functions[] = {
-		{ "ctx_new",	luazmq_ctx_new },
-		{ "socket",	luazmq_socket },
-		{ "version",	luazmq_version },
-		{ NULL,		NULL }
+		{ "ctx_new",		luazmq_ctx_new },
+		{ "curve_keypair",	luazmq_curve_keypair },
+		{ "socket",		luazmq_socket },
+		{ "strerror",		luazmq_strerror },
+		{ "version",		luazmq_version },
+		{ "z85_decode",		luazmq_z85_decode },
+		{ "z85_encode",		luazmq_z85_encode },
+		{ NULL,			NULL }
 	};
 	struct luaL_Reg ctx_methods[] = {
-		{ "destroy",	luazmq_ctx_destroy },
-		{ "socket",	luazmq_ctx_socket },
-		{ NULL,		NULL }
+		{ "get",		luazmq_ctx_get },
+		{ "set",		luazmq_ctx_set },
+		{ "shutdown",		luazmq_ctx_shutdown },
+		{ "socket",		luazmq_ctx_socket },
+		{ "term",		luazmq_ctx_term },
+		{ NULL,			NULL }
 	};
 	struct luaL_Reg socket_methods[] = {
-		{ "bind",	luazmq_bind },
-		{ "close",	luazmq_close },
-		{ "connect",	luazmq_connect },
-		{ "getsockopt",	luazmq_getsockopt },
-		{ "msg_recv",	luazmq_msg_recv },
-		{ "msg_send",	luazmq_msg_send },
-		{ "recv",	luazmq_recv },
-		{ "send",	luazmq_send },
-		{ "setsockopt",	luazmq_setsockopt },
-		{ NULL,		NULL }
+		{ "bind",		luazmq_bind },
+		{ "close",		luazmq_close },
+		{ "connect",		luazmq_connect },
+		{ "getsockopt",		luazmq_getsockopt },
+		{ "msg_recv",		luazmq_msg_recv },
+		{ "msg_send",		luazmq_msg_send },
+		{ "recv",		luazmq_recv },
+		{ "send",		luazmq_send },
+		{ "setsockopt",		luazmq_setsockopt },
+		{ "unbind",		luazmq_unbind },
+		{ NULL,			NULL }
 	};
 	int n;
 
@@ -327,7 +454,7 @@ luaopen_zmq(lua_State *L)
 		luaL_register(L, NULL, ctx_methods);
 #endif
 		lua_pushliteral(L, "__gc");
-		lua_pushcfunction(L, luazmq_ctx_destroy);
+		lua_pushcfunction(L, luazmq_ctx_term);
 		lua_settable(L, -3);
 
 		lua_pushliteral(L, "__index");
