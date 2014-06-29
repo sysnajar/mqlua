@@ -1,7 +1,7 @@
 mqlua - Run multiple Lua states in POSIX threads and use ZeroMQ for
-communicaton between the states.
+communication between the states.
 
-Copyright (C) Micro Systems Marc Balmer.
+Copyright (C) 2014 Micro Systems Marc Balmer.
 You can reach the author at marc@msys.ch
 
 Makefile is for BSD systems
