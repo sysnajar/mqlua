@@ -142,8 +142,8 @@ main(int argc, char *argv[])
 		} while (nodes > 0);
 
 	zmq_close(housekeeping);
-	zmq_ctx_destroy(zmq_housekeeping);
+	zmq_ctx_term(zmq_housekeeping);
 #endif
-	zmq_ctx_destroy(zmq_context);
+	zmq_ctx_term(zmq_context);
 	return 0;
 }
